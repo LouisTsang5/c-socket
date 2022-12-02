@@ -10,36 +10,36 @@
 #define QUEUE 5
 #define BUFFER_SIZE 512
 
-void printBytes(uint8_t *byte_start, size_t byte_len);
-
-int main(int argc, char **argv)
+struct conn_info
 {
-    printf("Hello World!\n");
+    int conn_fd;
+    socklen_t sock_len;
+    struct sockaddr sock_addr;
+};
 
+int create_socket_and_listen(int port, int queue_size)
+{
     // Create file descriptor for socket
-    int socketFd = socket(AF_INET, SOCK_STREAM, 0);
-    if (socketFd < 0)
+    int socket_fd = socket(AF_INET, SOCK_STREAM, 0);
+    if (socket_fd < 0)
     {
         perror("Error: Failed to create socket file descriptor\n");
         exit(EXIT_FAILURE);
     }
     else
     {
-        printf("Socket file descriptor (%d) created\n", socketFd);
+        printf("Socket file descriptor (%d) created\n", socket_fd);
     }
 
     // Socket Address Info
     struct sockaddr_in sockaddr_in;           // Create struct
     bzero(&sockaddr_in, sizeof(sockaddr_in)); // Zero out the memery of the struct
-    struct in_addr in_addr;
-    bzero(&in_addr, sizeof(in_addr));
-    in_addr.s_addr = htonl(INADDR_ANY);
     sockaddr_in.sin_family = AF_INET;
-    sockaddr_in.sin_port = htons(PORT);
-    sockaddr_in.sin_addr = in_addr;
+    sockaddr_in.sin_port = htons(port);
+    sockaddr_in.sin_addr.s_addr = htonl(INADDR_ANY);
 
     // Bind socket to address
-    int bindResult = bind(socketFd, (struct sockaddr *)&sockaddr_in, sizeof(sockaddr_in));
+    int bindResult = bind(socket_fd, (struct sockaddr *)&sockaddr_in, sizeof(sockaddr_in));
     if (bindResult != 0)
     {
         char errMsg[50];
@@ -53,7 +53,7 @@ int main(int argc, char **argv)
     }
 
     // Listen on socket
-    int listenResult = listen(socketFd, QUEUE);
+    int listenResult = listen(socket_fd, queue_size);
     if (listenResult != 0)
     {
         perror("Error: Failed to listen on socket\n");
@@ -64,44 +64,69 @@ int main(int argc, char **argv)
         printf("Socket listening...\n");
     }
 
-    // Accept connection
-    struct sockaddr client;
-    unsigned int clientLen = sizeof(client);
-    bzero(&client, clientLen);
-    int connFd = accept(socketFd, &client, &clientLen);
-    if (connFd < 0)
+    // Return file descriptor of the socket
+    return socket_fd;
+}
+
+struct conn_info *accept_conn(int sock_fd)
+{
+    // Create the buffers to hold the address info
+    struct conn_info *p_conn_info = malloc(sizeof(struct conn_info));
+
+    // bzero(&client, clientLen);
+    p_conn_info->conn_fd = accept(sock_fd, &(p_conn_info->sock_addr), &(p_conn_info->sock_len));
+    if (p_conn_info->conn_fd < 0)
     {
         perror("Failed to accept connection\n");
         exit(EXIT_FAILURE);
     }
     else
     {
-        printf("Connection accepted\n");
+        printf("Connection accepted (fd: %d)\n", p_conn_info->conn_fd);
     }
 
+    // Return a pointer to the client addr
+    return p_conn_info;
+}
+
+void handle_conn(int conn_fd, size_t buffer_size)
+{
     // Read from buffer
-    char buffer[BUFFER_SIZE];
-    bzero(&buffer, BUFFER_SIZE);
+    char *p_buffer = malloc(buffer_size);
     for (;;)
     {
         // Read from soket into buffer
-        read(connFd, &buffer, sizeof(buffer));
+        read(conn_fd, p_buffer, buffer_size);
 
         // Check if exit command has been received
-        if (strncmp("exit", buffer, 4) == 0)
+        if (strncmp("exit", p_buffer, 4) == 0)
         {
             printf("Exit command received. Exiting...\n");
-            close(connFd);
+            close(conn_fd);
             break;
         }
 
         // Print the message and clear the buffer
-        printf("Message: %s", buffer);
-        bzero(&buffer, BUFFER_SIZE);
+        printf("Message: %s", p_buffer);
+        bzero(p_buffer, buffer_size);
     }
+    free(p_buffer);
+}
 
-    // Close the socket
-    close(socketFd);
+int main(int argc, char **argv)
+{
+    // Create a socket, bind, and listen
+    int sock_fd = create_socket_and_listen(PORT, QUEUE);
+
+    // Accept the connection
+    struct conn_info *p_conn_info = accept_conn(sock_fd);
+
+    // Handle the connection
+    handle_conn(p_conn_info->conn_fd, BUFFER_SIZE);
+
+    // Close the socket and free used memory
+    close(sock_fd);
+    free(p_conn_info);
 
     exit(EXIT_SUCCESS);
 }
