@@ -122,9 +122,11 @@ void *handle_conn(struct conn_info *p_conn_info)
         }
 
         // Check if exit command has been received
-        if (strncmp("exit", p_buffer, 4) == 0)
+        if (strncmp("exit\n", p_buffer, 5) == 0 || strncmp("q\n", p_buffer, 2) == 0)
         {
             printf("Exit command received. Exiting...\n");
+            char *reply = "Connection closed.\n";
+            write(p_conn_info->conn_fd, reply, strlen(reply));
             close(p_conn_info->conn_fd);
             break;
         }
