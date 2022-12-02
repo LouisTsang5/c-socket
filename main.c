@@ -5,6 +5,7 @@
 #include <string.h>
 #include <arpa/inet.h>
 #include <unistd.h>
+#include <pthread.h>
 
 #define PORT 8080
 #define QUEUE 5
@@ -15,6 +16,7 @@ struct conn_info
     int conn_fd;
     socklen_t info_len;
     struct sockaddr_in conn_info;
+    size_t buff_size;
 };
 
 int create_socket_and_listen(int port, int queue_size)
@@ -88,14 +90,36 @@ struct conn_info *accept_conn(int sock_fd)
     return p_conn_info;
 }
 
-void handle_conn(struct conn_info *p_conn_info, size_t buffer_size)
+void *handle_conn(struct conn_info *p_conn_info)
 {
+    // Log thread creation
+    printf("Thread created for connection. (fd: %d, buff_size: %zu)\n", p_conn_info->conn_fd, p_conn_info->buff_size);
+
     // Read from buffer
-    char *p_buffer = malloc(buffer_size);
+    size_t buff_size = p_conn_info->buff_size;
+    char *p_buffer = malloc(buff_size);
     for (;;)
     {
         // Read from soket into buffer
-        read(p_conn_info->conn_fd, p_buffer, buffer_size);
+        int read_ret = read(p_conn_info->conn_fd, p_buffer, buff_size);
+
+        // Exit if read failed
+        if (read_ret < 0)
+        {
+            printf("Read error (%u). Exiting...\n", read_ret);
+            free(p_buffer);
+            free(p_conn_info);
+            pthread_exit(NULL);
+        }
+
+        // Exit if EOF
+        if (read_ret == 0)
+        {
+            printf("No more data can be read. Exiting...\n");
+            free(p_buffer);
+            free(p_conn_info);
+            pthread_exit(NULL);
+        }
 
         // Check if exit command has been received
         if (strncmp("exit", p_buffer, 4) == 0)
@@ -107,9 +131,11 @@ void handle_conn(struct conn_info *p_conn_info, size_t buffer_size)
 
         // Print the message and clear the buffer
         printf("Message: %s", p_buffer);
-        bzero(p_buffer, buffer_size);
+        bzero(p_buffer, buff_size);
     }
     free(p_buffer);
+    free(p_conn_info);
+    pthread_exit(NULL);
 }
 
 int main(int argc, char **argv)
@@ -123,10 +149,9 @@ int main(int argc, char **argv)
         struct conn_info *p_conn_info = accept_conn(sock_fd);
 
         // Handle the connection
-        handle_conn(p_conn_info, BUFFER_SIZE);
-
-        // Free the memory
-        free(p_conn_info);
+        pthread_t thread;
+        p_conn_info->buff_size = BUFFER_SIZE;
+        pthread_create(&thread, NULL, handle_conn, p_conn_info);
     }
 
     // Close the socket and free used memory
