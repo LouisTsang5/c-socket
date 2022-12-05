@@ -9,12 +9,6 @@
 #include <unistd.h>
 #include <pthread.h>
 
-#define PORT 8081
-#define QUEUE 5
-#define BUFF_SIZE 512
-#define DEST_IP "127.0.0.1"
-#define DEST_PORT 8082
-
 void log(char *format, ...)
 {
     // Calculate and create buffer to add a prefix and a subfix to the message
@@ -178,6 +172,7 @@ struct handle_conn_info
     int src_conn_fd;
     char *des_name;
     int des_port;
+    size_t buff_size;
 };
 
 void *handle_conn(struct handle_conn_info *p_handle_conn_info)
@@ -209,8 +204,8 @@ void *handle_conn(struct handle_conn_info *p_handle_conn_info)
         log("Connected to %s at port %d", inet_ntoa(des_addr_info.sin_addr), ntohs(des_addr_info.sin_port));
 
     // Create 2 threads to handle two way trafficing
-    struct forward_info s2d_info = {src_conn_fd, f_sock_fd, BUFF_SIZE};
-    struct forward_info d2s_info = {f_sock_fd, src_conn_fd, BUFF_SIZE};
+    struct forward_info s2d_info = {src_conn_fd, f_sock_fd, p_handle_conn_info->buff_size};
+    struct forward_info d2s_info = {f_sock_fd, src_conn_fd, p_handle_conn_info->buff_size};
     pthread_t s2d_thread, d2s_thread;
     pthread_create(&s2d_thread, NULL, &forward, &s2d_info);
     pthread_create(&d2s_thread, NULL, &forward, &d2s_info);
@@ -224,13 +219,90 @@ void *handle_conn(struct handle_conn_info *p_handle_conn_info)
     pthread_exit(NULL);
 }
 
+struct proc_args
+{
+    int port;
+    size_t buff_size;
+    int queue_size;
+    char *des_name;
+    int des_port;
+};
+
+void read_opts(int argc, char **argv, struct proc_args *p_proc_args)
+{
+    // Zero the args struct
+    bzero(p_proc_args, sizeof(struct proc_args));
+
+    // Set default values
+    int listen_port = 8081;
+    int queue_size = 5;
+    int i_buff_size = 1024;
+    int des_port = -1;
+    char *des_name = NULL;
+
+    // Read args
+    int ch;
+    while ((ch = getopt(argc, argv, "l:b:q:t:p:h")) != -1)
+    {
+        switch (ch)
+        {
+        case 'l':
+            listen_port = atoi(optarg);
+            break;
+        case 'b':
+            i_buff_size = atoi(optarg) * 1024;
+            break;
+        case 'q':
+            queue_size = atoi(optarg);
+            break;
+        case 't':
+            des_name = optarg;
+            break;
+        case 'p':
+            des_port = atoi(optarg);
+            break;
+        case '?':
+        case 'h':
+        default:
+            printf("Usage: %s -t fwd_addr -p fwd_port [-l lstn_port] [-b buff_size] [-q queue_size]\n\tfwd_addr:\tThe address to be forwarded to\n\tfwd_port:\tThe port number to be forwarded to\n\tlstn_port:\tThe port to listen on\n\tbuff_size:\tThe size of the read/write buffer in KB (default to 1 KB).\n\t\t\tEach ongoing connection will consume [2 * buff_size] amount of memory.\n\tqueue_size:\tThe maximum number of pending connecting allowed (default to 5)\n", argv[0]);
+            exit(EXIT_FAILURE);
+        }
+    }
+
+    // Validate args
+    if (listen_port <= 0)
+        log_err_and_term("Please provide a valid listen port number");
+    if (i_buff_size <= 0)
+        log_err_and_term("Please provide a valid buffer size");
+    if (queue_size < 0)
+        log_err_and_term("Please provide a valid queue size");
+    if (des_port <= 0)
+        log_err_and_term("Please provide a valid target port number");
+    if (des_name == NULL)
+        log_err_and_term("Please provide a valid target address");
+
+    // Set process args
+    p_proc_args->port = listen_port;
+    p_proc_args->buff_size = i_buff_size;
+    p_proc_args->queue_size = queue_size;
+    p_proc_args->des_name = des_name;
+    p_proc_args->des_port = des_port;
+}
+
 int main(int argc, char **argv)
 {
+    // Read arguments
+    struct proc_args proc_args;
+    read_opts(argc, argv, &proc_args);
+    printf(
+        "The application is started with the below configuration:\nListen Port: %d\nBuffer Size: %lu\nConnection Queue Size: %d\nForward Address: %s:%d\n",
+        proc_args.port, proc_args.buff_size, proc_args.queue_size, proc_args.des_name, proc_args.des_port);
+
     // Ignore write error. Write error will be handled within the process
     signal(SIGPIPE, SIG_IGN);
 
     // Create tcp socket and listen on it
-    int l_sock_fd = create_socket_and_listen(PORT, QUEUE);
+    int l_sock_fd = create_socket_and_listen(proc_args.port, proc_args.queue_size);
 
     while (1)
     {
@@ -244,8 +316,9 @@ int main(int argc, char **argv)
         struct handle_conn_info *p_handle_conn_info = malloc(sizeof(struct handle_conn_info));
         p_handle_conn_info->src_conn_fd = src_conn_fd;
         p_handle_conn_info->src_addr_info = src_info;
-        p_handle_conn_info->des_name = DEST_IP;
-        p_handle_conn_info->des_port = DEST_PORT;
+        p_handle_conn_info->des_name = proc_args.des_name;
+        p_handle_conn_info->des_port = proc_args.des_port;
+        p_handle_conn_info->buff_size = proc_args.buff_size;
         pthread_create(&handle_thread, NULL, &handle_conn, p_handle_conn_info);
     }
 
