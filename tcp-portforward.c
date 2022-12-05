@@ -154,6 +154,8 @@ void forward(int src_fd, int des_fd, size_t buff_size)
     free(buff);
 
     // Close connections
+    shutdown(src_fd, SHUT_RD);
+    shutdown(des_fd, SHUT_WR);
     close(src_fd);
     close(des_fd);
 }
