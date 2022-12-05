@@ -8,6 +8,7 @@
 #include <sys/types.h>
 #include <unistd.h>
 #include <pthread.h>
+#include <netdb.h>
 
 void log(char *format, ...)
 {
@@ -170,7 +171,7 @@ struct handle_conn_info
 {
     struct sockaddr_in src_addr_info;
     int src_conn_fd;
-    char *des_name;
+    struct in_addr *des_addr;
     int des_port;
     size_t buff_size;
 };
@@ -180,13 +181,13 @@ void *handle_conn(struct handle_conn_info *p_handle_conn_info)
     // Variable mapping
     struct sockaddr_in src_addr_info = p_handle_conn_info->src_addr_info;
     int src_conn_fd = p_handle_conn_info->src_conn_fd;
-    char *des_name = p_handle_conn_info->des_name;
+    struct in_addr *des_addr = p_handle_conn_info->des_addr;
     int des_port = p_handle_conn_info->des_port;
 
     // Set the forwarding info
     struct sockaddr_in des_addr_info;
     des_addr_info.sin_family = AF_INET;
-    des_addr_info.sin_addr.s_addr = inet_addr(des_name);
+    des_addr_info.sin_addr = *des_addr;
     des_addr_info.sin_port = htons(des_port);
 
     // Create socket for forwarding
@@ -298,6 +299,13 @@ int main(int argc, char **argv)
         "The application is started with the below configuration:\nListen Port: %d\nBuffer Size: %lu\nConnection Queue Size: %d\nForward Address: %s:%d\n",
         proc_args.port, proc_args.buff_size, proc_args.queue_size, proc_args.des_name, proc_args.des_port);
 
+    // Find the ip address of the forward destination
+    struct hostent *he = gethostbyname(proc_args.des_name);
+    if (he == NULL)
+        log_err_and_term("Cannot find ip of %s\n", proc_args.des_name);
+    struct in_addr *addr = ((struct in_addr **)he->h_addr_list)[0];
+    printf("Forward IP: %s\n", inet_ntoa(*addr));
+
     // Ignore write error. Write error will be handled within the process
     signal(SIGPIPE, SIG_IGN);
 
@@ -316,7 +324,7 @@ int main(int argc, char **argv)
         struct handle_conn_info *p_handle_conn_info = malloc(sizeof(struct handle_conn_info));
         p_handle_conn_info->src_conn_fd = src_conn_fd;
         p_handle_conn_info->src_addr_info = src_info;
-        p_handle_conn_info->des_name = proc_args.des_name;
+        p_handle_conn_info->des_addr = addr;
         p_handle_conn_info->des_port = proc_args.des_port;
         p_handle_conn_info->buff_size = proc_args.buff_size;
         pthread_create(&handle_thread, NULL, &handle_conn, p_handle_conn_info);
