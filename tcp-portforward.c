@@ -10,6 +10,82 @@
 #include <pthread.h>
 #include <netdb.h>
 
+struct proc_args
+{
+    int port;
+    size_t buff_size;
+    int queue_size;
+    char *des_name;
+    int des_port;
+};
+
+struct handle_conn_info
+{
+    struct sockaddr_in src_addr_info;
+    int src_conn_fd;
+    struct in_addr *des_addr;
+    int des_port;
+    size_t buff_size;
+};
+
+struct forward_info
+{
+    int fm_fd;
+    int to_fd;
+    size_t buff_size;
+};
+
+void log(char *format, ...);
+void log_err_and_term(char *format, ...);
+void read_opts(int argc, char **argv, struct proc_args *p_proc_args);
+int create_socket_and_listen(int port, int queue_size);
+int accept_conn(int sock_fd, struct sockaddr_in *p_client_info, socklen_t *p_info_len);
+void *handle_conn(struct handle_conn_info *p_handle_conn_info);
+void *forward(struct forward_info *p_forward_info);
+
+int main(int argc, char **argv)
+{
+    // Read arguments
+    struct proc_args proc_args;
+    read_opts(argc, argv, &proc_args);
+    printf(
+        "The application is started with the below configuration:\nListen Port: %d\nBuffer Size: %lu\nConnection Queue Size: %d\nForward Address: %s:%d\n",
+        proc_args.port, proc_args.buff_size, proc_args.queue_size, proc_args.des_name, proc_args.des_port);
+
+    // Find the ip address of the forward destination
+    struct hostent *he = gethostbyname(proc_args.des_name);
+    if (he == NULL)
+        log_err_and_term("Cannot find ip of %s\n", proc_args.des_name);
+    struct in_addr *addr = ((struct in_addr **)he->h_addr_list)[0];
+    printf("Forward IP: %s\n", inet_ntoa(*addr));
+
+    // Ignore write error. Write error will be handled within the process
+    signal(SIGPIPE, SIG_IGN);
+
+    // Create tcp socket and listen on it
+    int l_sock_fd = create_socket_and_listen(proc_args.port, proc_args.queue_size);
+
+    while (1)
+    {
+        // Accept a connection
+        struct sockaddr_in src_info;
+        socklen_t src_info_len;
+        int src_conn_fd = accept_conn(l_sock_fd, &src_info, &src_info_len);
+
+        // Create a new thread to handle the connection
+        pthread_t handle_thread;
+        struct handle_conn_info *p_handle_conn_info = malloc(sizeof(struct handle_conn_info));
+        p_handle_conn_info->src_conn_fd = src_conn_fd;
+        p_handle_conn_info->src_addr_info = src_info;
+        p_handle_conn_info->des_addr = addr;
+        p_handle_conn_info->des_port = proc_args.des_port;
+        p_handle_conn_info->buff_size = proc_args.buff_size;
+        pthread_create(&handle_thread, NULL, &handle_conn, p_handle_conn_info);
+    }
+
+    return 0;
+}
+
 void log(char *format, ...)
 {
     // Calculate and create buffer to add a prefix and a subfix to the message
@@ -106,13 +182,6 @@ int accept_conn(int sock_fd, struct sockaddr_in *p_client_info, socklen_t *p_inf
     return conn_fd;
 }
 
-struct forward_info
-{
-    int fm_fd;
-    int to_fd;
-    size_t buff_size;
-};
-
 void *forward(struct forward_info *p_forward_info)
 {
     int fm_fd = p_forward_info->fm_fd;
@@ -167,15 +236,6 @@ void *forward(struct forward_info *p_forward_info)
     pthread_exit(NULL);
 }
 
-struct handle_conn_info
-{
-    struct sockaddr_in src_addr_info;
-    int src_conn_fd;
-    struct in_addr *des_addr;
-    int des_port;
-    size_t buff_size;
-};
-
 void *handle_conn(struct handle_conn_info *p_handle_conn_info)
 {
     // Variable mapping
@@ -219,15 +279,6 @@ void *handle_conn(struct handle_conn_info *p_handle_conn_info)
     free(p_handle_conn_info);
     pthread_exit(NULL);
 }
-
-struct proc_args
-{
-    int port;
-    size_t buff_size;
-    int queue_size;
-    char *des_name;
-    int des_port;
-};
 
 void read_opts(int argc, char **argv, struct proc_args *p_proc_args)
 {
@@ -288,47 +339,4 @@ void read_opts(int argc, char **argv, struct proc_args *p_proc_args)
     p_proc_args->queue_size = queue_size;
     p_proc_args->des_name = des_name;
     p_proc_args->des_port = des_port;
-}
-
-int main(int argc, char **argv)
-{
-    // Read arguments
-    struct proc_args proc_args;
-    read_opts(argc, argv, &proc_args);
-    printf(
-        "The application is started with the below configuration:\nListen Port: %d\nBuffer Size: %lu\nConnection Queue Size: %d\nForward Address: %s:%d\n",
-        proc_args.port, proc_args.buff_size, proc_args.queue_size, proc_args.des_name, proc_args.des_port);
-
-    // Find the ip address of the forward destination
-    struct hostent *he = gethostbyname(proc_args.des_name);
-    if (he == NULL)
-        log_err_and_term("Cannot find ip of %s\n", proc_args.des_name);
-    struct in_addr *addr = ((struct in_addr **)he->h_addr_list)[0];
-    printf("Forward IP: %s\n", inet_ntoa(*addr));
-
-    // Ignore write error. Write error will be handled within the process
-    signal(SIGPIPE, SIG_IGN);
-
-    // Create tcp socket and listen on it
-    int l_sock_fd = create_socket_and_listen(proc_args.port, proc_args.queue_size);
-
-    while (1)
-    {
-        // Accept a connection
-        struct sockaddr_in src_info;
-        socklen_t src_info_len;
-        int src_conn_fd = accept_conn(l_sock_fd, &src_info, &src_info_len);
-
-        // Create a new thread to handle the connection
-        pthread_t handle_thread;
-        struct handle_conn_info *p_handle_conn_info = malloc(sizeof(struct handle_conn_info));
-        p_handle_conn_info->src_conn_fd = src_conn_fd;
-        p_handle_conn_info->src_addr_info = src_info;
-        p_handle_conn_info->des_addr = addr;
-        p_handle_conn_info->des_port = proc_args.des_port;
-        p_handle_conn_info->buff_size = proc_args.buff_size;
-        pthread_create(&handle_thread, NULL, &handle_conn, p_handle_conn_info);
-    }
-
-    return 0;
 }
