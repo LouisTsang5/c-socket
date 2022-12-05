@@ -48,16 +48,16 @@ int main(int argc, char **argv)
     // Read arguments
     struct proc_args proc_args;
     read_opts(argc, argv, &proc_args);
-    printf(
-        "The application is started with the below configuration:\nListen Port: %d\nBuffer Size: %lu\nConnection Queue Size: %d\nForward Address: %s:%d\n",
+    log(
+        "The application is started with the below configuration:\nListen Port: %d\nBuffer Size: %lu\nConnection Queue Size: %d\nForward Address: %s:%d",
         proc_args.port, proc_args.buff_size, proc_args.queue_size, proc_args.des_name, proc_args.des_port);
 
     // Find the ip address of the forward destination
     struct hostent *he = gethostbyname(proc_args.des_name);
     if (he == NULL)
-        log_err_and_term("Cannot find ip of %s\n", proc_args.des_name);
+        log_err_and_term("Cannot find ip of %s", proc_args.des_name);
     struct in_addr *addr = ((struct in_addr **)he->h_addr_list)[0];
-    printf("Forward IP: %s\n", inet_ntoa(*addr));
+    log("Forward IP: %s", inet_ntoa(*addr));
 
     // Ignore write error. Write error will be handled within the process
     signal(SIGPIPE, SIG_IGN);
