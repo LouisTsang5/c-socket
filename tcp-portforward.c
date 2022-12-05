@@ -158,6 +158,9 @@ void forward(int src_fd, int des_fd, size_t buff_size)
 
 int main(int argc, char **argv)
 {
+    // Ignore write error. Write error will be handled within the process
+    signal(SIGPIPE, SIG_IGN);
+
     // Create tcp socket and listen on it
     int l_sock_fd = create_socket_and_listen(PORT, QUEUE);
 
