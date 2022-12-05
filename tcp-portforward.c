@@ -7,6 +7,7 @@
 #include <arpa/inet.h>
 #include <sys/types.h>
 #include <unistd.h>
+#include <pthread.h>
 
 #define PORT 8081
 #define QUEUE 5
@@ -117,7 +118,7 @@ struct forward_info
     size_t buff_size;
 };
 
-void forward(struct forward_info *p_forward_info)
+void *forward(struct forward_info *p_forward_info)
 {
     int fm_fd = p_forward_info->fm_fd;
     int to_fd = p_forward_info->to_fd;
@@ -166,6 +167,9 @@ void forward(struct forward_info *p_forward_info)
     shutdown(to_fd, SHUT_WR);
     close(fm_fd);
     close(to_fd);
+
+    // Exit the thread
+    pthread_exit(NULL);
 }
 
 int main(int argc, char **argv)
@@ -203,10 +207,13 @@ int main(int argc, char **argv)
         log("Connected to %s at port %d", inet_ntoa(dest_info.sin_addr), ntohs(dest_info.sin_port));
 
     // Test
-    struct forward_info src_to_des_info = {src_conn_fd, f_sock_fd, BUFF_SIZE};
-    struct forward_info des_to_src_info = {f_sock_fd, src_conn_fd, BUFF_SIZE};
-    forward(&src_to_des_info);
-    forward(&des_to_src_info);
+    struct forward_info s2d_info = {src_conn_fd, f_sock_fd, BUFF_SIZE};
+    struct forward_info d2s_info = {f_sock_fd, src_conn_fd, BUFF_SIZE};
+    pthread_t s2d_thread, d2s_thread;
+    pthread_create(&s2d_thread, NULL, &forward, &s2d_info);
+    pthread_create(&d2s_thread, NULL, &forward, &d2s_info);
+    pthread_join(s2d_thread, NULL);
+    pthread_join(d2s_thread, NULL);
 
     return 0;
 }
