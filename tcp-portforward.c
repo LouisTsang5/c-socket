@@ -120,7 +120,8 @@ void forward(int src_fd, int des_fd, size_t buff_size)
         log("Bytes read: %d", read_ret);
         if (read_ret < 0)
         {
-            log_err_and_term("(%d)Failed to read from src_fd %d", read_ret, src_fd);
+            log("(%d)Failed to read from src_fd %d", read_ret, src_fd);
+            break;
         }
         if (read_ret == 0)
         {
@@ -135,7 +136,8 @@ void forward(int src_fd, int des_fd, size_t buff_size)
         log("Bytes written: %d", write_ret);
         if (write_ret < 0)
         {
-            log_err_and_term("(%d)Failed to write to des_fd %d", write_ret, des_fd);
+            log("(%d)Failed to write to des_fd %d", write_ret, des_fd);
+            break;
         }
         if (write_ret == 0)
         {
