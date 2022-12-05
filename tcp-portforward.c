@@ -140,8 +140,6 @@ void forward(struct forward_info *p_forward_info)
         }
 
         // Write to des
-        log("Writting...");
-        // TODO: Find out why write will crash process (SIGPIPE)
         int write_ret = write(to_fd, buff, read_ret);
         log("Bytes written: %d", write_ret);
         if (write_ret < 0)
