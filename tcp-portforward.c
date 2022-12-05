@@ -110,38 +110,48 @@ int accept_conn(int sock_fd, struct sockaddr_in *p_client_info, socklen_t *p_inf
     return conn_fd;
 }
 
-void forward(int src_fd, int des_fd, size_t buff_size)
+struct forward_info
 {
+    int fm_fd;
+    int to_fd;
+    size_t buff_size;
+};
+
+void forward(struct forward_info *p_forward_info)
+{
+    int fm_fd = p_forward_info->fm_fd;
+    int to_fd = p_forward_info->to_fd;
+    size_t buff_size = p_forward_info->buff_size;
     uint8_t *buff = malloc(buff_size);
     while (1)
     {
         // Read from src
-        int read_ret = read(src_fd, buff, buff_size);
+        int read_ret = read(fm_fd, buff, buff_size);
         log("Bytes read: %d", read_ret);
         if (read_ret < 0)
         {
-            log("(%d)Failed to read from src_fd %d", read_ret, src_fd);
+            log("(%d)Failed to read from fd %d", read_ret, fm_fd);
             break;
         }
         if (read_ret == 0)
         {
-            log("No more content can be read from src_fd %d", src_fd);
+            log("No more content can be read from fd %d", fm_fd);
             break;
         }
 
         // Write to des
         log("Writting...");
         // TODO: Find out why write will crash process (SIGPIPE)
-        int write_ret = write(des_fd, buff, read_ret);
+        int write_ret = write(to_fd, buff, read_ret);
         log("Bytes written: %d", write_ret);
         if (write_ret < 0)
         {
-            log("(%d)Failed to write to des_fd %d", write_ret, des_fd);
+            log("(%d)Failed to write to fd %d", write_ret, to_fd);
             break;
         }
         if (write_ret == 0)
         {
-            log("No more content can be write to des_fd %d", des_fd);
+            log("No more content can be write to fd %d", to_fd);
             break;
         }
 
@@ -154,10 +164,10 @@ void forward(int src_fd, int des_fd, size_t buff_size)
     free(buff);
 
     // Close connections
-    shutdown(src_fd, SHUT_RD);
-    shutdown(des_fd, SHUT_WR);
-    close(src_fd);
-    close(des_fd);
+    shutdown(fm_fd, SHUT_RD);
+    shutdown(to_fd, SHUT_WR);
+    close(fm_fd);
+    close(to_fd);
 }
 
 int main(int argc, char **argv)
@@ -195,7 +205,10 @@ int main(int argc, char **argv)
         log("Connected to %s at port %d", inet_ntoa(dest_info.sin_addr), ntohs(dest_info.sin_port));
 
     // Test
-    forward(src_conn_fd, f_sock_fd, BUFF_SIZE);
+    struct forward_info src_to_des_info = {src_conn_fd, f_sock_fd, BUFF_SIZE};
+    struct forward_info des_to_src_info = {f_sock_fd, src_conn_fd, BUFF_SIZE};
+    forward(&src_to_des_info);
+    forward(&des_to_src_info);
 
     return 0;
 }
