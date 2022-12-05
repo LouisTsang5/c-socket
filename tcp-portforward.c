@@ -172,25 +172,28 @@ void *forward(struct forward_info *p_forward_info)
     pthread_exit(NULL);
 }
 
-int main(int argc, char **argv)
+// TODO: Update handle conn to be threaded
+struct handle_conn_info
 {
-    // Ignore write error. Write error will be handled within the process
-    signal(SIGPIPE, SIG_IGN);
+    struct sockaddr_in src_addr_info;
+    int src_conn_fd;
+    char *des_name;
+    int des_port;
+};
 
-    // Create tcp socket and listen on it
-    int l_sock_fd = create_socket_and_listen(PORT, QUEUE);
+void *handle_conn(struct handle_conn_info *p_handle_conn_info)
+{
+    // Variable mapping
+    struct sockaddr_in src_addr_info = p_handle_conn_info->src_addr_info;
+    int src_conn_fd = p_handle_conn_info->src_conn_fd;
+    char *des_name = p_handle_conn_info->des_name;
+    int des_port = p_handle_conn_info->des_port;
 
-    // Accept a connection
-    struct sockaddr_in src_info;
-    socklen_t src_info_len;
-    int src_conn_fd = accept_conn(l_sock_fd, &src_info, &src_info_len);
-
-    // Connection to target
-    struct sockaddr_in dest_info;
-    dest_info.sin_family = AF_INET;
-    dest_info.sin_addr.s_addr = inet_addr(DEST_IP);
-    dest_info.sin_port = htons(DEST_PORT);
-    socklen_t dest_info_len = sizeof(dest_info);
+    // Set the forwarding info
+    struct sockaddr_in des_addr_info;
+    des_addr_info.sin_family = AF_INET;
+    des_addr_info.sin_addr.s_addr = inet_addr(des_name);
+    des_addr_info.sin_port = htons(des_port);
 
     // Create socket for forwarding
     int f_sock_fd = socket(AF_INET, SOCK_STREAM, 0);
@@ -200,20 +203,52 @@ int main(int argc, char **argv)
         log("Socket file descriptor (%d) created", f_sock_fd);
 
     // Connect to socket
-    int connect_ret = connect(f_sock_fd, (struct sockaddr *)&dest_info, dest_info_len);
+    int connect_ret = connect(f_sock_fd, (struct sockaddr *)&des_addr_info, sizeof(des_addr_info));
     if (connect_ret != 0)
-        log_err_and_term("(%d)Failed to connect to %s at port %d", connect_ret, inet_ntoa(dest_info.sin_addr), ntohs(dest_info.sin_port));
+        log_err_and_term("(%d)Failed to connect to %s at port %d", connect_ret, inet_ntoa(des_addr_info.sin_addr), ntohs(des_addr_info.sin_port));
     else
-        log("Connected to %s at port %d", inet_ntoa(dest_info.sin_addr), ntohs(dest_info.sin_port));
+        log("Connected to %s at port %d", inet_ntoa(des_addr_info.sin_addr), ntohs(des_addr_info.sin_port));
 
-    // Test
+    // Create 2 threads to handle two way trafficing
     struct forward_info s2d_info = {src_conn_fd, f_sock_fd, BUFF_SIZE};
     struct forward_info d2s_info = {f_sock_fd, src_conn_fd, BUFF_SIZE};
     pthread_t s2d_thread, d2s_thread;
     pthread_create(&s2d_thread, NULL, &forward, &s2d_info);
     pthread_create(&d2s_thread, NULL, &forward, &d2s_info);
+
+    // Wait for the threads to exit before exiting this thread
     pthread_join(s2d_thread, NULL);
     pthread_join(d2s_thread, NULL);
+
+    // Free the used heap memory and exit thread
+    free(p_handle_conn_info);
+    pthread_exit(NULL);
+}
+
+int main(int argc, char **argv)
+{
+    // Ignore write error. Write error will be handled within the process
+    signal(SIGPIPE, SIG_IGN);
+
+    // Create tcp socket and listen on it
+    int l_sock_fd = create_socket_and_listen(PORT, QUEUE);
+
+    while (1)
+    {
+        // Accept a connection
+        struct sockaddr_in src_info;
+        socklen_t src_info_len;
+        int src_conn_fd = accept_conn(l_sock_fd, &src_info, &src_info_len);
+
+        // Create a new thread to handle the connection
+        pthread_t handle_thread;
+        struct handle_conn_info *p_handle_conn_info = malloc(sizeof(struct handle_conn_info));
+        p_handle_conn_info->src_conn_fd = src_conn_fd;
+        p_handle_conn_info->src_addr_info = src_info;
+        p_handle_conn_info->des_name = DEST_IP;
+        p_handle_conn_info->des_port = DEST_PORT;
+        pthread_create(&handle_thread, NULL, &handle_conn, p_handle_conn_info);
+    }
 
     return 0;
 }
