@@ -172,7 +172,6 @@ void *forward(struct forward_info *p_forward_info)
     pthread_exit(NULL);
 }
 
-// TODO: Update handle conn to be threaded
 struct handle_conn_info
 {
     struct sockaddr_in src_addr_info;
