@@ -253,14 +253,23 @@ void *handle_conn(struct handle_conn_info *p_handle_conn_info)
     // Create socket for forwarding
     int f_sock_fd = socket(AF_INET, SOCK_STREAM, 0);
     if (f_sock_fd < 0)
-        log_err_and_term("(%d)Failed to create socket file descriptor", f_sock_fd);
+    {
+        log("(%d)Failed to create socket file descriptor", f_sock_fd);
+        close(src_conn_fd);
+        pthread_exit(NULL);
+    }
     else
         log("Socket file descriptor (%d) created", f_sock_fd);
 
     // Connect to socket
     int connect_ret = connect(f_sock_fd, (struct sockaddr *)&des_addr_info, sizeof(des_addr_info));
     if (connect_ret != 0)
-        log_err_and_term("(%d)Failed to connect to %s at port %d", connect_ret, inet_ntoa(des_addr_info.sin_addr), ntohs(des_addr_info.sin_port));
+    {
+        log("(%d)Failed to connect to %s at port %d", connect_ret, inet_ntoa(des_addr_info.sin_addr), ntohs(des_addr_info.sin_port));
+        close(src_conn_fd);
+        close(f_sock_fd);
+        pthread_exit(NULL);
+    }
     else
         log("Connected to %s at port %d", inet_ntoa(des_addr_info.sin_addr), ntohs(des_addr_info.sin_port));
 
