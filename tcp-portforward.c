@@ -92,7 +92,7 @@ void log(char *format, ...)
     char *suffix = "\n";
     size_t suffix_len = strlen(suffix);
     size_t fmt_len = strlen(format);
-    size_t buff_len = (fmt_len + suffix_len) * sizeof(char) + 1; // +1 for null terminator
+    size_t buff_len = (fmt_len + suffix_len + 1) * sizeof(char); // +1 for null terminator
     char *buff = malloc(buff_len);
     bzero(buff, buff_len);
     strncpy(buff, format, fmt_len);
