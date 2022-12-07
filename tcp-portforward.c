@@ -37,6 +37,7 @@ struct forward_info
 
 void log(char *format, ...);
 void log_err_and_term(char *format, ...);
+void usage(char *proc_name);
 void read_opts(int argc, char **argv, struct proc_args *p_proc_args);
 int create_socket_and_listen(int port, int queue_size);
 int accept_conn(int sock_fd, struct sockaddr_in *p_client_info, socklen_t *p_info_len);
@@ -290,8 +291,28 @@ void *handle_conn(struct handle_conn_info *p_handle_conn_info)
     pthread_exit(NULL);
 }
 
+void usage(char *proc_name)
+{
+    printf(
+        "Usage: %s -t fwd_addr -p fwd_port [-l lstn_port] [-b buff_size] [-q queue_size]\n\
+        fwd_addr:\tThe address to be forwarded to\n\
+        fwd_port:\tThe port number to be forwarded to\n\
+        lstn_port:\tThe port to listen on\n\
+        buff_size:\tThe size of the read/write buffer in KB (default to 1 KB).\n\
+        \t\tEach ongoing connection will consume [2 * buff_size] amount of memory.\n\
+        queue_size:\tThe maximum number of pending connecting allowed (default to 5)\n",
+        proc_name);
+}
+
 void read_opts(int argc, char **argv, struct proc_args *p_proc_args)
 {
+    // Return usage if no argument is provided
+    if (argc <= 1)
+    {
+        usage(argv[0]);
+        exit(EXIT_FAILURE);
+    }
+
     // Zero the args struct
     bzero(p_proc_args, sizeof(struct proc_args));
 
@@ -326,8 +347,8 @@ void read_opts(int argc, char **argv, struct proc_args *p_proc_args)
         case '?':
         case 'h':
         default:
-            printf("Usage: %s -t fwd_addr -p fwd_port [-l lstn_port] [-b buff_size] [-q queue_size]\n\tfwd_addr:\tThe address to be forwarded to\n\tfwd_port:\tThe port number to be forwarded to\n\tlstn_port:\tThe port to listen on\n\tbuff_size:\tThe size of the read/write buffer in KB (default to 1 KB).\n\t\t\tEach ongoing connection will consume [2 * buff_size] amount of memory.\n\tqueue_size:\tThe maximum number of pending connecting allowed (default to 5)\n", argv[0]);
-            exit(EXIT_FAILURE);
+            usage(argv[0]);
+            exit(EXIT_SUCCESS);
         }
     }
 
