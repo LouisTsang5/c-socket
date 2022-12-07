@@ -95,7 +95,7 @@ void log(char *format, ...)
     size_t fmt_len = strlen(format);
     size_t buff_len = (fmt_len + suffix_len + 1) * sizeof(char); // +1 for null terminator
     char *buff = malloc(buff_len);
-    bzero(buff, buff_len);
+    memset(buff, 0, buff_len);
     strncpy(buff, format, fmt_len);
     strncat(buff, suffix, ++suffix_len); // +1 for null terminator
 
@@ -222,7 +222,7 @@ void *forward(struct forward_info *p_forward_info)
 
         // Clear buffer
         log("Cleaning buffer...");
-        bzero(buff, buff_size);
+        memset(buff, 0, buff_size);
     }
 
     // Free buffer
@@ -314,7 +314,7 @@ void read_opts(int argc, char **argv, struct proc_args *p_proc_args)
     }
 
     // Zero the args struct
-    bzero(p_proc_args, sizeof(struct proc_args));
+    memset(p_proc_args, 0, sizeof(struct proc_args));
 
     // Set default values
     int listen_port = 8081;
