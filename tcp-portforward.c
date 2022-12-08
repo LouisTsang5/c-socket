@@ -178,7 +178,7 @@ int accept_conn(int sock_fd, struct sockaddr_in *p_client_info, socklen_t *p_inf
     if (conn_fd < 0)
         log_err_and_term("(%d)Failed to accept connection", conn_fd);
     else
-        log("Connection accepted (fd: %d, address: %s, port: %u)", conn_fd, inet_ntoa(p_client_info->sin_addr), p_client_info->sin_port);
+        log("Connection accepted (fd: %d, address: %s, port: %u)", conn_fd, inet_ntoa(p_client_info->sin_addr), ntohs(p_client_info->sin_port));
 
     // Return a pointer to the client addr
     return conn_fd;
