@@ -240,10 +240,8 @@ void *forward(struct forward_info *p_forward_info)
     free(buff);
 
     // Close connections
-    shutdown(fm_fd, SHUT_RD);
-    shutdown(to_fd, SHUT_WR);
-    close(fm_fd);
-    close(to_fd);
+    shutdown(fm_fd, SHUT_RDWR);
+    shutdown(to_fd, SHUT_RDWR);
 
     // Exit the thread
     pthread_exit(NULL);
@@ -272,42 +270,48 @@ void *handle_conn(struct handle_conn_info *p_handle_conn_info)
 
     // Create socket for forwarding
     int f_sock_fd = socket(AF_INET, SOCK_STREAM, 0);
-    if (f_sock_fd < 0)
+    if (f_sock_fd >= 0)
     {
-        log("(%d)Failed to create socket file descriptor", f_sock_fd);
-        close(src_conn_fd);
-        pthread_exit(NULL);
-    }
-    else
         log("Socket file descriptor (%d) created", f_sock_fd);
 
-    // Connect to socket
-    int connect_ret = connect(f_sock_fd, (struct sockaddr *)&des_addr_info, sizeof(des_addr_info));
-    if (connect_ret != 0)
-    {
-        log("(%d)Failed to connect to %s at port %d", connect_ret, inet_ntoa(des_addr_info.sin_addr), ntohs(des_addr_info.sin_port));
-        close(src_conn_fd);
-        close(f_sock_fd);
-        pthread_exit(NULL);
+        // Connect to socket
+        int connect_ret = connect(f_sock_fd, (struct sockaddr *)&des_addr_info, sizeof(des_addr_info));
+        if (connect_ret == 0)
+        {
+            log("Connected to %s at port %d", inet_ntoa(des_addr_info.sin_addr), ntohs(des_addr_info.sin_port));
+
+            // Create 2 threads to handle two way trafficing
+            struct forward_info s2d_info = {src_conn_fd, f_sock_fd, src_addr_str, des_addr_str, src_port, des_port, p_handle_conn_info->buff_size};
+            struct forward_info d2s_info = {f_sock_fd, src_conn_fd, des_addr_str, src_addr_str, des_port, src_port, p_handle_conn_info->buff_size};
+            pthread_t s2d_thread, d2s_thread;
+            pthread_create(&s2d_thread, NULL, &forward, &s2d_info);
+            pthread_create(&d2s_thread, NULL, &forward, &d2s_info);
+
+            // Wait for the threads to exit before exiting this thread
+            pthread_join(s2d_thread, NULL);
+            pthread_join(d2s_thread, NULL);
+        }
+        else
+        {
+            log("(%d)Failed to connect to %s at port %d", connect_ret, inet_ntoa(des_addr_info.sin_addr), ntohs(des_addr_info.sin_port));
+        }
     }
     else
-        log("Connected to %s at port %d", inet_ntoa(des_addr_info.sin_addr), ntohs(des_addr_info.sin_port));
+    {
+        log("(%d)Failed to create socket file descriptor", f_sock_fd);
+    }
 
-    // Create 2 threads to handle two way trafficing
-    struct forward_info s2d_info = {src_conn_fd, f_sock_fd, src_addr_str, des_addr_str, src_port, des_port, p_handle_conn_info->buff_size};
-    struct forward_info d2s_info = {f_sock_fd, src_conn_fd, des_addr_str, src_addr_str, des_port, src_port, p_handle_conn_info->buff_size};
-    pthread_t s2d_thread, d2s_thread;
-    pthread_create(&s2d_thread, NULL, &forward, &s2d_info);
-    pthread_create(&d2s_thread, NULL, &forward, &d2s_info);
+    // Close connections
+    close(src_conn_fd);
+    if (f_sock_fd >= 0)
+        close(f_sock_fd);
 
-    // Wait for the threads to exit before exiting this thread
-    pthread_join(s2d_thread, NULL);
-    pthread_join(d2s_thread, NULL);
-
-    // Free the used heap memory and exit thread
+    // Free used resources
     free(p_handle_conn_info);
     free(src_addr_str);
     free(des_addr_str);
+
+    // Exit thread
     pthread_exit(NULL);
 }
 
