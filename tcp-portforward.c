@@ -32,9 +32,14 @@ struct forward_info
 {
     int fm_fd;
     int to_fd;
+    char *fm_addr;
+    char *to_addr;
+    int fm_port;
+    int to_port;
     size_t buff_size;
 };
 
+char *get_addr_str(struct in_addr *addr);
 void log(char *format, ...);
 void log_err_and_term(char *format, ...);
 void usage(char *proc_name);
@@ -43,6 +48,8 @@ int create_socket_and_listen(int port, int queue_size);
 int accept_conn(int sock_fd, struct sockaddr_in *p_client_info, socklen_t *p_info_len);
 void *handle_conn(struct handle_conn_info *p_handle_conn_info);
 void *forward(struct forward_info *p_forward_info);
+
+pthread_mutex_t mutex_lock = PTHREAD_MUTEX_INITIALIZER;
 
 int main(int argc, char **argv)
 {
@@ -188,37 +195,41 @@ void *forward(struct forward_info *p_forward_info)
 {
     int fm_fd = p_forward_info->fm_fd;
     int to_fd = p_forward_info->to_fd;
+    char *fm_addr = p_forward_info->fm_addr;
+    char *to_addr = p_forward_info->to_addr;
+    int fm_port = p_forward_info->fm_port;
+    int to_port = p_forward_info->to_port;
     size_t buff_size = p_forward_info->buff_size;
     uint8_t *buff = malloc(buff_size);
     while (1)
     {
         // Read from src
         int read_ret = read(fm_fd, buff, buff_size);
-        log("Bytes read: %d", read_ret);
         if (read_ret < 0)
         {
-            log("(%d)Failed to read from fd %d", read_ret, fm_fd);
+            log("(%d)Failed to read from %s:%d", read_ret, fm_addr, fm_port);
             break;
         }
         if (read_ret == 0)
         {
-            log("No more content can be read from fd %d", fm_fd);
+            log("No more content can be read from %s:%d", fm_addr, fm_port);
             break;
         }
+        log("Read %d bytes from %s:%d", read_ret, fm_addr, fm_port);
 
         // Write to des
         int write_ret = write(to_fd, buff, read_ret);
-        log("Bytes written: %d", write_ret);
         if (write_ret < 0)
         {
-            log("(%d)Failed to write to fd %d", write_ret, to_fd);
+            log("(%d)Failed to write to %s:%d", write_ret, to_addr, to_port);
             break;
         }
         if (write_ret == 0)
         {
-            log("No more content can be write to fd %d", to_fd);
+            log("No more content can be write to %s:%d", to_addr, to_port);
             break;
         }
+        log("Wrote %d bytes to %s:%d", write_ret, to_addr, to_port);
 
         // Clear buffer
         log("Cleaning buffer...");
@@ -243,6 +254,7 @@ void *handle_conn(struct handle_conn_info *p_handle_conn_info)
     // Variable mapping
     struct sockaddr_in src_addr_info = p_handle_conn_info->src_addr_info;
     int src_conn_fd = p_handle_conn_info->src_conn_fd;
+    int src_port = (int)ntohs(src_addr_info.sin_port);
     struct in_addr *des_addr = p_handle_conn_info->des_addr;
     int des_port = p_handle_conn_info->des_port;
 
@@ -251,6 +263,12 @@ void *handle_conn(struct handle_conn_info *p_handle_conn_info)
     des_addr_info.sin_family = AF_INET;
     des_addr_info.sin_addr = *des_addr;
     des_addr_info.sin_port = htons(des_port);
+
+    // Parse the address string
+    pthread_mutex_lock(&mutex_lock); // Lock thread to prevent race condition when copying address
+    char *src_addr_str = get_addr_str(&(src_addr_info.sin_addr));
+    char *des_addr_str = get_addr_str(&(des_addr_info.sin_addr));
+    pthread_mutex_unlock(&mutex_lock);
 
     // Create socket for forwarding
     int f_sock_fd = socket(AF_INET, SOCK_STREAM, 0);
@@ -276,8 +294,8 @@ void *handle_conn(struct handle_conn_info *p_handle_conn_info)
         log("Connected to %s at port %d", inet_ntoa(des_addr_info.sin_addr), ntohs(des_addr_info.sin_port));
 
     // Create 2 threads to handle two way trafficing
-    struct forward_info s2d_info = {src_conn_fd, f_sock_fd, p_handle_conn_info->buff_size};
-    struct forward_info d2s_info = {f_sock_fd, src_conn_fd, p_handle_conn_info->buff_size};
+    struct forward_info s2d_info = {src_conn_fd, f_sock_fd, src_addr_str, des_addr_str, src_port, des_port, p_handle_conn_info->buff_size};
+    struct forward_info d2s_info = {f_sock_fd, src_conn_fd, des_addr_str, src_addr_str, des_port, src_port, p_handle_conn_info->buff_size};
     pthread_t s2d_thread, d2s_thread;
     pthread_create(&s2d_thread, NULL, &forward, &s2d_info);
     pthread_create(&d2s_thread, NULL, &forward, &d2s_info);
@@ -288,6 +306,8 @@ void *handle_conn(struct handle_conn_info *p_handle_conn_info)
 
     // Free the used heap memory and exit thread
     free(p_handle_conn_info);
+    free(src_addr_str);
+    free(des_addr_str);
     pthread_exit(NULL);
 }
 
@@ -370,4 +390,13 @@ void read_opts(int argc, char **argv, struct proc_args *p_proc_args)
     p_proc_args->queue_size = queue_size;
     p_proc_args->des_name = des_name;
     p_proc_args->des_port = des_port;
+}
+
+char *get_addr_str(struct in_addr *addr)
+{
+    char *tmp_addr_str = inet_ntoa(*addr);
+    size_t str_len = strlen(tmp_addr_str + sizeof(char)); // +1 for null terminator
+    char *str = malloc(str_len);
+    strncpy(str, tmp_addr_str, str_len);
+    return str;
 }
