@@ -400,8 +400,9 @@ void read_opts(int argc, char **argv, struct proc_args *p_proc_args)
 char *get_addr_str(struct in_addr *addr)
 {
     char *tmp_addr_str = inet_ntoa(*addr);
-    size_t str_len = strlen(tmp_addr_str + sizeof(char)); // +1 for null terminator
+    size_t str_len = strlen(tmp_addr_str) + sizeof(char); // +1 for null terminator
     char *str = malloc(str_len);
+    memset(str, 0, str_len);
     strncpy(str, tmp_addr_str, str_len);
     return str;
 }
