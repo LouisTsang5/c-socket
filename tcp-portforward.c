@@ -127,6 +127,7 @@ void log_err_and_term(char *format, ...)
     size_t fmt_len = strlen(format);
     size_t buff_len = (pad_len + fmt_len) * sizeof(char) + 1; // +1 for null terminator
     char *buff = malloc(buff_len);
+    memset(buff, 0, buff_len);
     strncpy(buff, prefix, prefix_len);
     strncat(buff, format, fmt_len);
     strncat(buff, suffix, ++suffix_len); // +1 for null terminator
