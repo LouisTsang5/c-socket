@@ -73,6 +73,11 @@ int main(int argc, char **argv)
     // Create tcp socket and listen on it
     int l_sock_fd = create_socket_and_listen(proc_args.port, proc_args.queue_size);
 
+    // Make threads detached
+    pthread_attr_t attr;
+    pthread_attr_init(&attr);
+    pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
+
     while (1)
     {
         // Accept a connection
@@ -88,7 +93,7 @@ int main(int argc, char **argv)
         p_handle_conn_info->des_addr = addr;
         p_handle_conn_info->des_port = proc_args.des_port;
         p_handle_conn_info->buff_size = proc_args.buff_size;
-        pthread_create(&handle_thread, NULL, &handle_conn, p_handle_conn_info);
+        pthread_create(&handle_thread, &attr, &handle_conn, p_handle_conn_info);
     }
 
     return 0;
