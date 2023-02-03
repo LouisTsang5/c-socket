@@ -302,6 +302,8 @@ void *handle_conn(struct handle_conn_info *p_handle_conn_info)
         log("(%d)Failed to create socket file descriptor", f_sock_fd);
     }
 
+    log("Closing handle for %s:%d...", src_addr_str, src_port);
+
     // Close connections
     close(src_conn_fd);
     if (f_sock_fd >= 0)
